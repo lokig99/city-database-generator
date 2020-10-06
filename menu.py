@@ -19,9 +19,9 @@ KEYS = "keys"
 DATA = "data"
 
 
-def regenerate_dictionary(compressed_dict: dict) -> dict:
+def regenerate_database(compressed_dict: dict) -> list:
     '''
-    generate dictionary with given structure:
+    generate database with given structure:
 
     [
         {
@@ -52,7 +52,7 @@ def regenerate_dictionary(compressed_dict: dict) -> dict:
 
 with open(JSON_DICT, 'r', encoding="utf8") as f:
     start = time.time()
-    DATABASE = regenerate_dictionary(json.load(f))
+    DATABASE = regenerate_database(json.load(f))
     end = time.time()
     print(f'Database generation took: {round(end - start, 6)} seconds')
 
