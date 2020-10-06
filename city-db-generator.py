@@ -5,6 +5,7 @@ import json
 import os
 import time
 
+
 WIKIPEDIA_ADDRESS = "https://en.wikipedia.org"
 
 LATITUDE_HTML = '<span class="latitude">'
@@ -14,6 +15,7 @@ SPAN_END_HTML = '</span>'
 HREF_BEGIN_HTML = '<a href="'
 HREF_END_HTML = '</a>'
 HREF_WIKI = "/wiki/"
+
 
 HREF_KEY = "href"
 HREF_TEXT_KEY = "text"
@@ -30,15 +32,19 @@ REGION = "region"
 LAT = "lat"
 LON = "lon"
 
-PROGRAM_PATH = os.path.dirname(os.path.abspath(__file__))
-WIKI_SOURCE_FILE = os.path.join(PROGRAM_PATH, "wiki.source")
-OUTPUT_FILE = os.path.join(PROGRAM_PATH, "output.json")
+DATA = "data"
+KEYS = 'keys'
 
+COUNTRY = "Poland"
+
+PROGRAM_PATH = os.path.dirname(os.path.abspath(__file__))
+WIKI_SOURCE_FILE = os.path.join(PROGRAM_PATH, "countries/Poland.wiki")
+WIKI_SOURCE_EXT = '.wiki'
+OUTPUT_FILE = os.path.join(PROGRAM_PATH, "output.json")
 
 # examples: "province", "state", "voivodeship", "region"
 ADM_REGION_HTML = '<a href="/wiki/Voivodeships_of_Poland" title="Voivodeships of Poland">Voivodeship</a>'
-
-result_list = []
+REGION_NAME = "Voivodeship"
 
 
 def get_coordinates_from_urlstring(url_string: str) -> dict:
@@ -46,24 +52,27 @@ def get_coordinates_from_urlstring(url_string: str) -> dict:
         for char in CORD_CHARS:
             cord_str = cord_str.replace(char, ' ')
 
+        if 's' in cord_str.lower() or 'w' in cord_str.lower():
+            cord_str = f'-{cord_str[:len(cord_str) - 1]}'
+        else:
+            cord_str = cord_str[:len(cord_str) - 1]
+
         res = [int(x) for x in cord_str.split()]
-        if len(res) < 3:
-            res.append(0)
         return res
 
     lat_index_start = url_string.find(LATITUDE_HTML) + len(LATITUDE_HTML)
-    lat_index_end = url_string.find(SPAN_END_HTML, lat_index_start) - 1
+    lat_index_end = url_string.find(SPAN_END_HTML, lat_index_start)
 
     lon_index_start = url_string.find(LONGITUDE_HTML) + len(LONGITUDE_HTML)
-    lon_index_end = url_string.find(SPAN_END_HTML, lon_index_start) - 1
+    lon_index_end = url_string.find(SPAN_END_HTML, lon_index_start)
 
-    res = {}
-    res[LATITUDE_KEY] = split_cord_chars(
-        url_string[lat_index_start:lat_index_end])
-    res[LONGITUDE_KEY] = split_cord_chars(
-        url_string[lon_index_start:lon_index_end])
+    lat_str = url_string[lat_index_start:lat_index_end]
+    lon_str = url_string[lon_index_start:lon_index_end]
 
-    return res
+    lat = split_cord_chars(lat_str)
+    lon = split_cord_chars(lon_str)
+
+    return {LATITUDE_KEY: lat, LONGITUDE_KEY: lon}
 
 
 def split_href_wiki_text(href_wiki: str) -> tuple:
@@ -74,7 +83,7 @@ def split_href_wiki_text(href_wiki: str) -> tuple:
     return res
 
 
-def get_adm_region_from_urlstring(url_string: str) -> str:
+def get_adm_region_from_urlstring(url_string: str, append_region_name=False) -> str:
     title_href_end = next(re.finditer(ADM_REGION_HTML, url_string)).end()
     url_string = url_string[title_href_end:]
     region_href_iter = re.finditer(HREF_BEGIN_HTML, url_string)
@@ -88,17 +97,18 @@ def get_adm_region_from_urlstring(url_string: str) -> str:
         href = url_string[region_href_end: url_string.find(
             HREF_END_HTML, region_href_end)]
 
-    return split_href_wiki_text(href)[HREF_TEXT_KEY]
+    region = split_href_wiki_text(href)[HREF_TEXT_KEY]
+    if append_region_name:
+        if not REGION_NAME.lower() in region.lower():
+            region = f"{region} {REGION_NAME}"
+
+    return region
 
 
 def get_all_wiki_href(url_string: str) -> dict:
     all_href = [url_string[m.end(): url_string.find(HREF_END_HTML, m.end())]
                 for m in re.finditer(HREF_BEGIN_HTML, url_string)]
     return [split_href_wiki_text(href) for href in all_href if href.startswith(HREF_WIKI)]
-
-
-def log_result(result):
-    result_list.append(result)
 
 
 def get_list_of_cities_async(city_href_list: list, processes_count=-1) -> list:
@@ -112,8 +122,13 @@ def get_list_of_cities_async(city_href_list: list, processes_count=-1) -> list:
         list_splitted = split_list(city_href_list, len(
             city_href_list) // processes_count)
     except:
-        print("ERROR! Too many processes. To use maximum number of thread set 'processes_count' to -1")
+        print("ERROR! Too many processes. To use maximum number of threads set 'processes_count' key-arg to: -1")
         return []
+
+    result_list = []
+
+    def log_result(result):
+        result_list.append(result)
 
     pool = ThreadPool(processes=processes_count)
     pool.map_async(get_city_attr_async, list_splitted, callback=log_result)
@@ -130,11 +145,11 @@ def get_city_attr_from_href(city_href: dict) -> dict:
 
     res = {}
     res[NAME] = city_href[HREF_TEXT_KEY]
-    res[REGION] = get_adm_region_from_urlstring(data)
 
     cords = get_coordinates_from_urlstring(data)
     res[LAT] = cords[LATITUDE_KEY]
     res[LON] = cords[LONGITUDE_KEY]
+    res[REGION] = get_adm_region_from_urlstring(data, append_region_name=True)
 
     return res
 
@@ -156,17 +171,46 @@ def flatten(lst: list) -> list:
     return [item for sublist in lst for item in sublist]
 
 
+def get_duplicate_cities(cities_attr: list) -> list:
+    occurences = {}
+    duplicates = []
+    for city in cities_attr:
+        occurences[city[NAME]] = occurences.get(city[NAME], 0) + 1
+        if occurences[city[NAME]] > 1:
+            duplicates.append(city)
+    return duplicates
+
+
+def optimized_output(cities_attr: list) -> dict:
+    cities = cities_attr.copy()
+    dups = get_duplicate_cities(cities)
+    for city in cities:
+        if city in dups:
+            city[NAME] = f'{city[NAME]}, {city[REGION]}'
+        del city[REGION]
+
+    keys = [NAME, LAT, LON]
+    data = flatten([list(city.values()) for city in cities])
+
+    return {KEYS: keys, DATA: data}
+
+
 if __name__ == "__main__":
     with open(WIKI_SOURCE_FILE, 'r') as f:
         data = str(f.read())
 
     time_start = time.time()
 
-    res = get_list_of_cities_async(get_all_wiki_href(data))
+    final_dict = {}
 
-    time_end = time.time()
+    res = get_list_of_cities_async(get_all_wiki_href(data), processes_count=-1)
 
-    print(f'\nFinished all tasks in {round(time_end - time_start, 2)} seconds')
+    print('duplicates:', get_duplicate_cities(res))
+
+    final_dict[COUNTRY] = optimized_output(res)
 
     with open(OUTPUT_FILE, 'w', encoding="UTF-8") as f:
-        json.dump(res, f, indent=4, ensure_ascii=False)
+        json.dump(final_dict, f, indent=4, ensure_ascii=False)
+
+    time_end = time.time()
+    print(f'\nFinished all tasks in {round(time_end - time_start, 2)} seconds')
