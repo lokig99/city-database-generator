@@ -62,7 +62,7 @@ France
 Gabon
 Gambia
 Georgia
-Germany
+                Germany
 Ghana
 Greece
 Grenada
@@ -137,7 +137,7 @@ Papua
 Paraguay
 Peru
 Philippines
-Poland
+            Poland
 Portugal
 Qatar
 Romania

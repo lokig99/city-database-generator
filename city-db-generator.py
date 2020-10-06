@@ -28,23 +28,38 @@ LONGITUDE_KEY = "longitude"
 
 # Attributes keys
 NAME = "name"
-REGION = "region"
 LAT = "lat"
 LON = "lon"
 
 DATA = "data"
 KEYS = 'keys'
+COUNTRY = "country"
 
-COUNTRY = "Poland"
 
 PROGRAM_PATH = os.path.dirname(os.path.abspath(__file__))
-WIKI_SOURCE_FILE = os.path.join(PROGRAM_PATH, "countries/Poland.wiki")
+WIKI_SOURCE_DIR = os.path.join(PROGRAM_PATH, "countries")
 WIKI_SOURCE_EXT = '.wiki'
 OUTPUT_FILE = os.path.join(PROGRAM_PATH, "output.json")
 
 # examples: "province", "state", "voivodeship", "region"
-ADM_REGION_HTML = '<a href="/wiki/Voivodeships_of_Poland" title="Voivodeships of Poland">Voivodeship</a>'
-REGION_NAME = "Voivodeship"
+# ADM_REGION_HTML = '<a href="/wiki/Voivodeships_of_Poland" title="Voivodeships of Poland">Voivodeship</a>'
+# REGION_NAME = "Voivodeship"
+
+
+def load_wiki_sources() -> list:
+    '''
+    returns list with given structure:
+    [ {COUNTRY: str, DATA: str},... ]
+    '''
+    sources = []
+    for filename in os.listdir(WIKI_SOURCE_DIR):
+        if filename.endswith(WIKI_SOURCE_EXT):
+            country = filename.replace(WIKI_SOURCE_EXT, '')
+            filepath = os.path.join(WIKI_SOURCE_DIR, filename)
+            with open(filepath, 'r', encoding="utf8") as f:
+                data = str(f.read())
+            sources.append({COUNTRY: country, DATA: data})
+    return sources
 
 
 def get_coordinates_from_urlstring(url_string: str) -> dict:
@@ -83,26 +98,26 @@ def split_href_wiki_text(href_wiki: str) -> tuple:
     return res
 
 
-def get_adm_region_from_urlstring(url_string: str, append_region_name=False) -> str:
-    title_href_end = next(re.finditer(ADM_REGION_HTML, url_string)).end()
-    url_string = url_string[title_href_end:]
-    region_href_iter = re.finditer(HREF_BEGIN_HTML, url_string)
-    region_href_end = next(region_href_iter).end()
-    href = url_string[region_href_end: url_string.find(
-        HREF_END_HTML, region_href_end)]
+# def get_adm_region_from_urlstring(url_string: str, append_region_name=False) -> str:
+#     title_href_end = next(re.finditer(ADM_REGION_HTML, url_string)).end()
+#     url_string = url_string[title_href_end:]
+#     region_href_iter = re.finditer(HREF_BEGIN_HTML, url_string)
+#     region_href_end = next(region_href_iter).end()
+#     href = url_string[region_href_end: url_string.find(
+#         HREF_END_HTML, region_href_end)]
 
-    # skip images before text
-    if href.find('class="image') != -1:
-        region_href_end = next(region_href_iter).end()
-        href = url_string[region_href_end: url_string.find(
-            HREF_END_HTML, region_href_end)]
+#     # skip images before text
+#     if href.find('class="image') != -1:
+#         region_href_end = next(region_href_iter).end()
+#         href = url_string[region_href_end: url_string.find(
+#             HREF_END_HTML, region_href_end)]
 
-    region = split_href_wiki_text(href)[HREF_TEXT_KEY]
-    if append_region_name:
-        if not REGION_NAME.lower() in region.lower():
-            region = f"{region} {REGION_NAME}"
+#     region = split_href_wiki_text(href)[HREF_TEXT_KEY]
+#     if append_region_name:
+#         if not REGION_NAME.lower() in region.lower():
+#             region = f"{region} {REGION_NAME}"
 
-    return region
+#     return region
 
 
 def get_all_wiki_href(url_string: str) -> dict:
@@ -149,7 +164,7 @@ def get_city_attr_from_href(city_href: dict) -> dict:
     cords = get_coordinates_from_urlstring(data)
     res[LAT] = cords[LATITUDE_KEY]
     res[LON] = cords[LONGITUDE_KEY]
-    res[REGION] = get_adm_region_from_urlstring(data, append_region_name=True)
+    # res[REGION] = get_adm_region_from_urlstring(data, append_region_name=True)
 
     return res
 
@@ -183,34 +198,30 @@ def get_duplicate_cities(cities_attr: list) -> list:
 
 def optimized_output(cities_attr: list) -> dict:
     cities = cities_attr.copy()
-    dups = get_duplicate_cities(cities)
-    for city in cities:
-        if city in dups:
-            city[NAME] = f'{city[NAME]}, {city[REGION]}'
-        del city[REGION]
-
     keys = [NAME, LAT, LON]
     data = flatten([list(city.values()) for city in cities])
-
     return {KEYS: keys, DATA: data}
 
 
-if __name__ == "__main__":
-    with open(WIKI_SOURCE_FILE, 'r') as f:
-        data = str(f.read())
+def generate_database() -> dict:
+    wiki_sources = load_wiki_sources()
+    database = {}
+    for wiki_source in wiki_sources:
+        tmp = get_list_of_cities_async(get_all_wiki_href(wiki_source[DATA]))
+        database[wiki_source[COUNTRY]] = optimized_output(tmp)
 
+    # DEBUG - print duplicates:
+    print("\nDuplicates:", get_duplicate_cities(tmp))
+
+    return database
+
+
+if __name__ == "__main__":
     time_start = time.time()
 
-    final_dict = {}
-
-    res = get_list_of_cities_async(get_all_wiki_href(data), processes_count=-1)
-
-    print('duplicates:', get_duplicate_cities(res))
-
-    final_dict[COUNTRY] = optimized_output(res)
-
+    data = generate_database()
     with open(OUTPUT_FILE, 'w', encoding="UTF-8") as f:
-        json.dump(final_dict, f, indent=4, ensure_ascii=False)
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
     time_end = time.time()
     print(f'\nFinished all tasks in {round(time_end - time_start, 2)} seconds')
