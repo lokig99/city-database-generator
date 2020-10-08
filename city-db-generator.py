@@ -1,10 +1,12 @@
 import re
-from urllib.request import urlopen
-from multiprocessing.pool import ThreadPool
-import json
 import os
 import time
+import json
+from urllib.request import urlopen
+from multiprocessing.pool import ThreadPool
 
+
+WORKERS_COUNT = 512
 
 WIKIPEDIA_ADDRESS = "https://en.wikipedia.org"
 
@@ -17,49 +19,44 @@ HREF_END_HTML = '</a>'
 HREF_WIKI = "/wiki/"
 
 
-HREF_KEY = "href"
-HREF_TEXT_KEY = "text"
+CORD_CHARS = '°', '′', '″'  # degrees, minutes and seconds
 
-CORD_CHARS = '°', '′', '″'
-
-LATITUDE_KEY = "latitude"
-LONGITUDE_KEY = "longitude"
-
-
-# Attributes keys
+# Dictionary keys
+HREF_LINK = "href"
+HREF_TEXT = "text"
 NAME = "name"
-LAT = "lat"
-LON = "lon"
-
+LATITUDE = "lat"
+LONGITUDE = "lon"
 DATA = "data"
-KEYS = 'keys'
+KEYS = "keys"
 COUNTRY = "country"
+CAPITAL = 'capital'
 
+ARTICLE_NOT_FOUND = 'Wikipedia does not have an article with this exact name'
 
-PROGRAM_PATH = os.path.dirname(os.path.abspath(__file__))
-WIKI_SOURCE_DIR = os.path.join(PROGRAM_PATH, "countries")
+WIKI_PAGE_ADDRESSES = '/wiki/List_of_cities_in_', 'List_of_cities_and_towns_in_'
+
+MANUAL_HREF_OVERRIDES = [
+    ("the_United_States",
+     'https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population'),
+    ("Netherlands", "https://en.wikipedia.org/wiki/List_of_cities_in_the_Netherlands_by_province"),
+    ("Timor-Leste", "https://en.wikipedia.org/wiki/List_of_cities,_towns_and_villages_in_East_Timor")]
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+WIKI_SOURCE_DIR = os.path.join(ROOT_DIR, "countries")
 WIKI_SOURCE_EXT = '.wiki'
-OUTPUT_FILE = os.path.join(PROGRAM_PATH, "output.json")
+OUTPUT_FILE = os.path.join(ROOT_DIR, "output.json")
+COUNTRIES_FILE = os.path.join(ROOT_DIR, 'cc-final.json')
 
-# examples: "province", "state", "voivodeship", "region"
-# ADM_REGION_HTML = '<a href="/wiki/Voivodeships_of_Poland" title="Voivodeships of Poland">Voivodeship</a>'
-# REGION_NAME = "Voivodeship"
+BANNED_WORDS = {'<img', '<span', 'culture', 'Kingdom', 'communities', 'communes', 'commune', 'community',
+                'World War', 'history', 'empire', 'revolution', 'article', 'republic', 'metropoly', 'metropolis',
+                'tourism', 'see', 'sea ', 'Volcanoes', 'geography', 'read', '<i', 'county', 'country', 'province', 'region', 'state',
+                'damaged', 'United Arab Emirates', 'Middle East', 'national', 'capital', 'island', 'ocean', 'exchange', 'market',
+                'central', 'center', 'falklands', 'space program', 'confederation', 'battle', 'Gibraltar', 'desert', 'royal',
+                ' sea', '>', '<', 'territor', 'university', 'soviet', 'union', 'europe', ' centre', ' district', 'church ', 'cathedral'}
 
-
-def load_wiki_sources() -> list:
-    '''
-    returns list with given structure:
-    [ {COUNTRY: str, DATA: str},... ]
-    '''
-    sources = []
-    for filename in os.listdir(WIKI_SOURCE_DIR):
-        if filename.endswith(WIKI_SOURCE_EXT):
-            country = filename.replace(WIKI_SOURCE_EXT, '')
-            filepath = os.path.join(WIKI_SOURCE_DIR, filename)
-            with open(filepath, 'r', encoding="utf8") as f:
-                data = str(f.read())
-            sources.append({COUNTRY: country, DATA: data})
-    return sources
+with open(COUNTRIES_FILE, 'r', encoding="utf8") as f:
+    COUNTRIES = json.load(f)
 
 
 def get_coordinates_from_urlstring(url_string: str) -> dict:
@@ -87,43 +84,75 @@ def get_coordinates_from_urlstring(url_string: str) -> dict:
     lat = split_cord_chars(lat_str)
     lon = split_cord_chars(lon_str)
 
-    return {LATITUDE_KEY: lat, LONGITUDE_KEY: lon}
+    return {LATITUDE: lat, LONGITUDE: lon}
 
 
-def split_href_wiki_text(href_wiki: str) -> tuple:
+def split_href_wiki_text(href_wiki: str, country: str) -> tuple:
     res = {}
     href = href_wiki[:href_wiki.find('"')]
-    res[HREF_KEY] = f'{WIKIPEDIA_ADDRESS}{href}'
-    res[HREF_TEXT_KEY] = href_wiki[href_wiki.find('>') + 1:]
+    res[HREF_LINK] = f'{WIKIPEDIA_ADDRESS}{href}'
+    res[HREF_TEXT] = href_wiki[href_wiki.find('>') + 1:]
+    res[COUNTRY] = country
+
+    # Filter out errors
+
+    for word in BANNED_WORDS:
+        word = word.lower()
+        if word in res[HREF_LINK].lower() or word in res[HREF_TEXT].lower():
+            return None
+
+    for c in COUNTRIES:
+        _country = c[COUNTRY].lower()
+        if _country in res[HREF_LINK].lower() or _country in res[HREF_TEXT].lower():
+            return None
+        if country.lower() != _country:
+            if c[CAPITAL].lower() in res[HREF_TEXT].lower():
+                return None
+
+    if any(char.isdigit() for char in res[HREF_TEXT]):
+        return None
+
+    if res[HREF_TEXT].upper() == res[HREF_TEXT]:
+        return None
+
     return res
 
 
-# def get_adm_region_from_urlstring(url_string: str, append_region_name=False) -> str:
-#     title_href_end = next(re.finditer(ADM_REGION_HTML, url_string)).end()
-#     url_string = url_string[title_href_end:]
-#     region_href_iter = re.finditer(HREF_BEGIN_HTML, url_string)
-#     region_href_end = next(region_href_iter).end()
-#     href = url_string[region_href_end: url_string.find(
-#         HREF_END_HTML, region_href_end)]
+def get_all_wiki_href(country: str) -> dict:
+    url_string = ''
+    man_override = False
+    man_address = ''
+    for item in MANUAL_HREF_OVERRIDES:
+        if country in item[0]:
+            man_override = True
+            man_address = item[1]
+            break
 
-#     # skip images before text
-#     if href.find('class="image') != -1:
-#         region_href_end = next(region_href_iter).end()
-#         href = url_string[region_href_end: url_string.find(
-#             HREF_END_HTML, region_href_end)]
+    if man_override:
+        try:
+            url = man_address
+            r = urlopen(url)
+            url_string = str(r.read(), encoding="UTF-8")
+        except:
+            print(f"Failed to visit site: {url}")
+    else:
+        for page in WIKI_PAGE_ADDRESSES:
+            try:
+                url = f'{WIKIPEDIA_ADDRESS}{page}{country}'
+                r = urlopen(url)
+                url_string = str(r.read(), encoding="UTF-8")
+            except:
+                print(f"Failed to visit site: {url}")
 
-#     region = split_href_wiki_text(href)[HREF_TEXT_KEY]
-#     if append_region_name:
-#         if not REGION_NAME.lower() in region.lower():
-#             region = f"{region} {REGION_NAME}"
+            if not ARTICLE_NOT_FOUND in url_string:
+                break
 
-#     return region
-
-
-def get_all_wiki_href(url_string: str) -> dict:
     all_href = [url_string[m.end(): url_string.find(HREF_END_HTML, m.end())]
                 for m in re.finditer(HREF_BEGIN_HTML, url_string)]
-    return [split_href_wiki_text(href) for href in all_href if href.startswith(HREF_WIKI)]
+
+    print("Got data for:", country)
+
+    return [split_href_wiki_text(href, country) for href in all_href if href.startswith(HREF_WIKI)]
 
 
 def get_list_of_cities_async(city_href_list: list, processes_count=-1) -> list:
@@ -136,6 +165,9 @@ def get_list_of_cities_async(city_href_list: list, processes_count=-1) -> list:
     try:
         list_splitted = split_list(city_href_list, len(
             city_href_list) // processes_count)
+    except ZeroDivisionError:
+        print("No tasks available...")
+        return []
     except:
         print("ERROR! Too many processes. To use maximum number of threads set 'processes_count' key-arg to: -1")
         return []
@@ -155,17 +187,22 @@ def get_list_of_cities_async(city_href_list: list, processes_count=-1) -> list:
 
 
 def get_city_attr_from_href(city_href: dict) -> dict:
-    req = urlopen(city_href[HREF_KEY])
+    try:
+        req = urlopen(city_href[HREF_LINK])
+    except:
+       # print(f"Failed to open url: {city_href[HREF_LINK]}")
+       pass
     data = str(req.read(), encoding="UTF-8")
 
     res = {}
-    res[NAME] = city_href[HREF_TEXT_KEY]
+    res[NAME] = ' '.join(city_href[HREF_TEXT].split())
+    if len(res[NAME]) > 1 and not res[NAME][0].isalpha():
+        res[NAME] = res[NAME][1:]
 
     cords = get_coordinates_from_urlstring(data)
-    res[LAT] = cords[LATITUDE_KEY]
-    res[LON] = cords[LONGITUDE_KEY]
-    # res[REGION] = get_adm_region_from_urlstring(data, append_region_name=True)
-
+    res[LATITUDE] = cords[LATITUDE]
+    res[LONGITUDE] = cords[LONGITUDE]
+    res[COUNTRY] = city_href[COUNTRY]
     return res
 
 
@@ -175,10 +212,10 @@ def get_city_attr_async(city_href_list: list) -> list:
         try:
             item = get_city_attr_from_href(href)
             res.append(item)
-            print(item)
+            #print(item)
         except:
-            print("failed")
-
+          #  print("failed")
+          pass
     return res
 
 
@@ -196,23 +233,52 @@ def get_duplicate_cities(cities_attr: list) -> list:
     return duplicates
 
 
+def delete_duplicates(cities_attr: list) -> None:
+    duplicates = get_duplicate_cities(cities_attr)
+    for d in duplicates:
+        cities_attr.remove(d)
+
+
 def optimized_output(cities_attr: list) -> dict:
-    cities = cities_attr.copy()
-    keys = [NAME, LAT, LON]
-    data = flatten([list(city.values()) for city in cities])
+    keys = [NAME, LATITUDE, LONGITUDE]
+    data = flatten([list(city.values()) for city in cities_attr])
     return {KEYS: keys, DATA: data}
 
 
+def split_cities_by_countries(cities_lst: list) -> dict:
+    res = {}
+    for city in cities_lst:
+        country = city[COUNTRY]
+        del city[COUNTRY]
+        res[country] = res.get(country, []) + [city]
+    return res
+
+
 def generate_database() -> dict:
-    wiki_sources = load_wiki_sources()
     database = {}
-    for wiki_source in wiki_sources:
-        tmp = get_list_of_cities_async(get_all_wiki_href(wiki_source[DATA]))
-        database[wiki_source[COUNTRY]] = optimized_output(tmp)
 
-    # DEBUG - print duplicates:
-    print("\nDuplicates:", get_duplicate_cities(tmp))
+    def generate_complete_href_list():
+        clst = [c[COUNTRY] for c in COUNTRIES]
+        pool = ThreadPool(processes=len(clst))
 
+        result_list = []
+
+        def get_res(res):
+            result_list.extend(res)
+
+        pool.map_async(get_all_wiki_href, clst, callback=get_res)
+        pool.close()
+        pool.join()
+        return flatten(result_list)
+
+    tmp = get_list_of_cities_async(
+        generate_complete_href_list(), processes_count=WORKERS_COUNT)
+    delete_duplicates(tmp)
+
+    cities_by_country = split_cities_by_countries(tmp)
+    for country in cities_by_country:
+        database[country.replace("_", " ")] = optimized_output(
+            cities_by_country[country])
     return database
 
 
@@ -221,7 +287,7 @@ if __name__ == "__main__":
 
     data = generate_database()
     with open(OUTPUT_FILE, 'w', encoding="UTF-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+        json.dump(data, f, ensure_ascii=False)
 
     time_end = time.time()
     print(f'\nFinished all tasks in {round(time_end - time_start, 2)} seconds')
