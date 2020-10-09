@@ -190,4 +190,4 @@ if __name__ == "__main__":
 
     z = get_single_word_cities_sorted_az(DATABASE)
     x = index_sorted_cities(z)
-    print(x)
+    print(len(DATABASE))

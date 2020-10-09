@@ -6,7 +6,7 @@ from urllib.request import urlopen
 from multiprocessing.pool import ThreadPool
 
 
-WORKERS_COUNT = 512
+WORKERS_COUNT = 1000
 
 WIKIPEDIA_ADDRESS = "https://en.wikipedia.org"
 
@@ -50,10 +50,11 @@ COUNTRIES_FILE = os.path.join(ROOT_DIR, 'cc-final.json')
 
 BANNED_WORDS = {'<img', '<span', 'culture', 'Kingdom', 'communities', 'communes', 'commune', 'community',
                 'World War', 'history', 'empire', 'revolution', 'article', 'republic', 'metropoly', 'metropolis',
-                'tourism', 'see', 'sea ', 'Volcanoes', 'geography', 'read', '<i', 'county', 'country', 'province', 'region', 'state',
+                'tourism', 'see ', 'sea ', 'Volcanoes', 'geography', 'read', '<i', 'county', 'country', 'province', 'region', 'state',
                 'damaged', 'United Arab Emirates', 'Middle East', 'national', 'capital', 'island', 'ocean', 'exchange', 'market',
                 'central', 'center', 'falklands', 'space program', 'confederation', 'battle', 'Gibraltar', 'desert', 'royal',
-                ' sea', '>', '<', 'territor', 'university', 'soviet', 'union', 'europe', ' centre', ' district', 'church ', 'cathedral'}
+                ' sea', '>', '<', 'territor', 'university', 'soviet', 'union', 'europe', ' centre', ' district', 'church ',
+                 'cathedral', 'school', 'municipality', 'the '}
 
 with open(COUNTRIES_FILE, 'r', encoding="utf8") as f:
     COUNTRIES = json.load(f)
@@ -95,6 +96,10 @@ def split_href_wiki_text(href_wiki: str, country: str) -> tuple:
     res[COUNTRY] = country
 
     # Filter out errors
+
+    res[HREF_TEXT] = res[HREF_TEXT].replace("city of ", "")
+    res[HREF_TEXT] = res[HREF_TEXT].replace("City of ", "")
+    res[HREF_TEXT] = res[HREF_TEXT].replace(" (city)", "")
 
     for word in BANNED_WORDS:
         word = word.lower()
@@ -187,11 +192,13 @@ def get_list_of_cities_async(city_href_list: list, processes_count=-1) -> list:
 
 
 def get_city_attr_from_href(city_href: dict) -> dict:
-    try:
-        req = urlopen(city_href[HREF_LINK])
-    except:
-       # print(f"Failed to open url: {city_href[HREF_LINK]}")
-       pass
+    for _ in range(10):
+        try:
+            req = urlopen(city_href[HREF_LINK])
+            break
+        except:
+            # print(f"Failed to open url: {city_href[HREF_LINK]}")
+            pass
     data = str(req.read(), encoding="UTF-8")
 
     res = {}
@@ -212,10 +219,10 @@ def get_city_attr_async(city_href_list: list) -> list:
         try:
             item = get_city_attr_from_href(href)
             res.append(item)
-            #print(item)
+            # print(item)
         except:
-          #  print("failed")
-          pass
+            #  print("failed")
+            pass
     return res
 
 
@@ -227,9 +234,12 @@ def get_duplicate_cities(cities_attr: list) -> list:
     occurences = {}
     duplicates = []
     for city in cities_attr:
-        occurences[city[NAME]] = occurences.get(city[NAME], 0) + 1
-        if occurences[city[NAME]] > 1:
+        occurences[city[NAME]+city[COUNTRY]] = occurences.get(city[NAME]+city[COUNTRY], 0) + 1
+        if occurences[city[NAME]+city[COUNTRY]] > 1:
             duplicates.append(city)
+
+    print(occurences)
+    print(duplicates)
     return duplicates
 
 

@@ -114,14 +114,10 @@ class LocationDatabase:
             self.__swl_index = tmp_swl_index
 
             # index locations by country
-            for loc in self.__single_word_locations:
-                self.__countries[loc[COUNTRY_ID]][SWL_LOCATIONS].append(
-                    self.__single_word_locations.index(loc))
-                del loc[COUNTRY_ID]
-            for loc in self.__multiple_word_locations:
-                self.__countries[loc[COUNTRY_ID]][MWL_LOCATIONS].append(
-                    self.__multiple_word_locations.index(loc))
-                del loc[COUNTRY_ID]
+            for index, loc in enumerate(self.__single_word_locations):
+                self.__countries[loc[COUNTRY_ID]][SWL_LOCATIONS].append(index)
+            for index, loc in enumerate(self.__multiple_word_locations):
+                self.__countries[loc[COUNTRY_ID]][MWL_LOCATIONS].append(index)
 
         result = False
         try:
@@ -131,7 +127,8 @@ class LocationDatabase:
             for country in json_db:
                 ctry_id = _text_to_id(country)
                 tmp_countries_dict[ctry_id] = {
-                    COUNTRY: country, SWL_LOCATIONS: [], MWL_LOCATIONS: []}
+                    COUNTRY: country, SEARCH_COUNTRY: country.lower(),
+                    SWL_LOCATIONS: [], MWL_LOCATIONS: []}
                 keys = json_db[country][KEYS]
                 data = json_db[country][DATA]
 
@@ -191,7 +188,7 @@ class LocationDatabase:
             else:
                 city_name = city_attr[SEARCH_NAME]
 
-            country = ''  # city_attr[SEARCH_COUNTRY]
+            country = self.__countries[city_attr[COUNTRY_ID]][SEARCH_COUNTRY]
 
             for t in text_split:
                 if t in city_name or t in country:
@@ -202,9 +199,19 @@ class LocationDatabase:
 
         matches = []
         text = text.lower()
-        # for city in DATABASE:
-        #     if text_in_city_attr(text, city):
-        #         matches.append(city)
+        fst_letter = text[0]
+        search_index_start = self.__swl_index[fst_letter]
+        if fst_letter == ASCII_ALPHABET[-1]:
+            for city in self.__single_word_locations[search_index_start:]:
+                if text_in_city_attr(text, city):
+                    matches.append(city)
+        else:
+            search_index_end = self.__swl_index[ASCII_ALPHABET[ASCII_ALPHABET.find(
+                fst_letter) + 1]]
+            for city in self.__single_word_locations[search_index_start:search_index_end]:
+                if text_in_city_attr(text, city):
+                    matches.append(city)
+
         return matches
 
     def print_data(self):
@@ -215,7 +222,7 @@ class LocationDatabase:
 
 
 def printable_matches(matches: list) -> list:
-    return [f'{item[NAME]}, {item[COUNTRY]}\tLat:{item[LAT]}, Lon:{item[LON]}' for item in matches]
+    return [f'{item[NAME]}, {item[COUNTRY_ID]}\tLat:{item[LAT]}, Lon:{item[LON]}' for item in matches]
 
 
 if __name__ == "__main__":
@@ -233,4 +240,18 @@ if __name__ == "__main__":
     end = time.time()
     print(res, "took:", round((end - start) * 1000), "miliseconds")
 
-   # db.print_data()
+    # db.print_data()
+
+    while True:
+        searched_text = input('Search for city: ')
+        if searched_text == "exit()":
+            break
+        start = time.time()
+        matches = db.search(searched_text)
+        end = time.time()
+        for match in printable_matches(matches):
+            print(match)
+        print(f"\nSearch took: {round((end - start) * 1000)} miliseconds\n")
+
+    del db
+    time.sleep(10)
