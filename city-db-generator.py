@@ -6,7 +6,7 @@ from urllib.request import urlopen
 from multiprocessing.pool import ThreadPool
 
 
-WORKERS_COUNT = 1000
+WORKERS_COUNT = 64
 
 WIKIPEDIA_ADDRESS = "https://en.wikipedia.org"
 
@@ -54,7 +54,7 @@ BANNED_WORDS = {'<img', '<span', 'culture', 'Kingdom', 'communities', 'communes'
                 'damaged', 'United Arab Emirates', 'Middle East', 'national', 'capital', 'island', 'ocean', 'exchange', 'market',
                 'central', 'center', 'falklands', 'space program', 'confederation', 'battle', 'Gibraltar', 'desert', 'royal',
                 ' sea', '>', '<', 'territor', 'university', 'soviet', 'union', 'europe', ' centre', ' district', 'church ',
-                 'cathedral', 'school', 'municipality', 'the '}
+                'cathedral', 'school', 'municipality', 'the ', ' area', ' zone', 'district of'}
 
 with open(COUNTRIES_FILE, 'r', encoding="utf8") as f:
     COUNTRIES = json.load(f)
@@ -70,7 +70,7 @@ def get_coordinates_from_urlstring(url_string: str) -> dict:
         else:
             cord_str = cord_str[:len(cord_str) - 1]
 
-        res = [int(x) for x in cord_str.split()]
+        res = [float(x) if '.' in x else int(x) for x in cord_str.split()]
         return res
 
     lat_index_start = url_string.find(LATITUDE_HTML) + len(LATITUDE_HTML)
@@ -234,7 +234,8 @@ def get_duplicate_cities(cities_attr: list) -> list:
     occurences = {}
     duplicates = []
     for city in cities_attr:
-        occurences[city[NAME]+city[COUNTRY]] = occurences.get(city[NAME]+city[COUNTRY], 0) + 1
+        occurences[city[NAME]+city[COUNTRY]
+                   ] = occurences.get(city[NAME]+city[COUNTRY], 0) + 1
         if occurences[city[NAME]+city[COUNTRY]] > 1:
             duplicates.append(city)
 
@@ -249,12 +250,6 @@ def delete_duplicates(cities_attr: list) -> None:
         cities_attr.remove(d)
 
 
-def optimized_output(cities_attr: list) -> dict:
-    keys = [NAME, LATITUDE, LONGITUDE]
-    data = flatten([list(city.values()) for city in cities_attr])
-    return {KEYS: keys, DATA: data}
-
-
 def split_cities_by_countries(cities_lst: list) -> dict:
     res = {}
     for city in cities_lst:
@@ -265,8 +260,6 @@ def split_cities_by_countries(cities_lst: list) -> dict:
 
 
 def generate_database() -> dict:
-    database = {}
-
     def generate_complete_href_list():
         clst = [c[COUNTRY] for c in COUNTRIES]
         pool = ThreadPool(processes=len(clst))
@@ -286,10 +279,15 @@ def generate_database() -> dict:
     delete_duplicates(tmp)
 
     cities_by_country = split_cities_by_countries(tmp)
+
+    # compress database
+    keys = [NAME, LATITUDE, LONGITUDE]
+    compressed_data = {}
     for country in cities_by_country:
-        database[country.replace("_", " ")] = optimized_output(
-            cities_by_country[country])
-    return database
+        compressed_data[country.replace("_", " ")] = flatten(
+            [list(city.values()) for city in cities_by_country[country]])
+
+    return {KEYS: keys, DATA: compressed_data}
 
 
 if __name__ == "__main__":

@@ -124,13 +124,13 @@ class LocationDatabase:
             tmp_countries_dict = {}
             tmp_list_swl = []
             tmp_list_mwl = []
-            for country in json_db:
+            keys = json_db[KEYS]
+            for country in json_db[DATA]:
                 ctry_id = _text_to_id(country)
                 tmp_countries_dict[ctry_id] = {
                     COUNTRY: country, SEARCH_COUNTRY: country.lower(),
                     SWL_LOCATIONS: [], MWL_LOCATIONS: []}
-                keys = json_db[country][KEYS]
-                data = json_db[country][DATA]
+                data = json_db[DATA][country]
 
                 # fill swl and mwl lists
                 tmp_dict = {}
@@ -235,12 +235,10 @@ if __name__ == "__main__":
     print(res, "took:", round((end - start) * 1000), "miliseconds")
     res = db.save_to_cache()
 
-    start = time.time()
-    res = db.open_from_cache()
-    end = time.time()
-    print(res, "took:", round((end - start) * 1000), "miliseconds")
-
-    # db.print_data()
+    # start = time.time()
+    # res = db.open_from_cache()
+    # end = time.time()
+    # print(res, "took:", round((end - start) * 1000), "miliseconds")
 
     while True:
         searched_text = input('Search for city: ')

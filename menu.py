@@ -80,9 +80,9 @@ def regenerate_database(compressed_dict: dict) -> list:
     ]
     '''
     res = []
-    for country in compressed_dict:
-        keys = compressed_dict[country][KEYS]
-        data = compressed_dict[country][DATA]
+    keys = compressed_dict[KEYS]
+    for country in compressed_dict[DATA]:
+        data = compressed_dict[DATA][country]
         tmp_list = []
         tmp_dict = {}
         for i, data_bit in enumerate(data):
