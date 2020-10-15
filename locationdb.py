@@ -34,6 +34,9 @@ class Location:
     def __init__(self, name: str):
         self.name = name
 
+    def __str__(self):
+        return self.name
+
     def searchable_name(self) -> str:
         return _normalize_text(self.name, keep_diacritics=True)
 
@@ -55,14 +58,17 @@ class City(Location):
         self.latitude = latitude
         self.longitude = longitude
 
+    def __str__(self):
+        s = super().__str__()
+        return f"{s} {self.latitude} {self.longitude}"
+
 
 class LocationDatabase:
     def __init__(self):
         self.__is_opened = False
-        self.__single_word_cities: Dict[str, List[City]] = dict(
+        self.__cities_indexed: Dict[str, List[City]] = dict(
             [(l, []) for l in ASCII_ALPHABET])
-        self.__multiple_word_cities: List[City] = []
-        self.__countries: List[Country] = []
+        self.__countries: Set[Country] = set()
 
     def open_from_json(self) -> bool:
         success = False
@@ -90,7 +96,7 @@ class LocationDatabase:
             keys = json_db[KEYS]
             for country_name in json_db[DATA]:
                 country = Country(country_name)
-                self.__countries.append(country)
+                self.__countries.add(country)
                 data = json_db[DATA][country_name]
                 tmp_dict: Dict[str, Any] = {}
                 for i, data_bit in enumerate(data):
@@ -98,11 +104,8 @@ class LocationDatabase:
                     if len(tmp_dict) == len(keys):
                         city = City(tmp_dict[NAME], country,
                                     tmp_dict[LAT], tmp_dict[LON])
-                        if len(city.name.split()) > 1:  # fill swl and mwl lists
-                            self.__multiple_word_cities.append(city)
-                        else:
-                            self.__single_word_cities[city.searchable_name_normalized()[0]].append(
-                                city)
+                        self.__cities_indexed[city.searchable_name_normalized()[0]].append(
+                            city)
                         tmp_dict.clear()
                     tmp_dict[keys[i]] = data_bit
             result = True
@@ -114,23 +117,18 @@ class LocationDatabase:
         def text_in_city_attr(text: str, city: City) -> bool:
             # check if there are no special characters in searched words
             if _normalize_text(text) == text:
-                loc_name = city.searchable_name_normalized()
+                city_name = city.searchable_name_normalized()
             else:
-                loc_name = city.searchable_name()
-            return text in loc_name
+                city_name = city.searchable_name()
+            return city_name.startswith(text)
 
         matches = set()
-
         if len(text) > 0 and text[0].isalpha():
             text = _normalize_text(text, keep_diacritics=True)
             fst_letter = _normalize_text(text[0])
-            for loc in self.__single_word_cities[fst_letter]:
-                if text_in_city_attr(text, loc):
-                    matches.add(loc)
-
-            for country in self.__countries:
-                if country.searchable_name().startswith(text):
-                    matches = matches.union(country.cities)
+            for city in self.__cities_indexed[fst_letter]:
+                if text_in_city_attr(text, city):
+                    matches.add(city)
         return matches
 
 
@@ -160,6 +158,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import time
     main()
-    time.sleep(10)
