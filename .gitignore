@@ -1,5 +1,6 @@
 output.json
 __pycache__
+.mypy*
 *.txt
 *.pkl
 *.log

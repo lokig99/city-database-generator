@@ -44,17 +44,19 @@ MANUAL_HREF_OVERRIDES = [
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 WIKI_SOURCE_DIR = os.path.join(ROOT_DIR, "countries")
-WIKI_SOURCE_EXT = '.wiki'
 OUTPUT_FILE = os.path.join(ROOT_DIR, "output.json")
 COUNTRIES_FILE = os.path.join(ROOT_DIR, 'cc-final.json')
 
-BANNED_WORDS = {'<img', '<span', 'culture', 'Kingdom', 'communities', 'communes', 'commune', 'community',
-                'World War', 'history', 'empire', 'revolution', 'article', 'republic', 'metropoly', 'metropolis',
-                'tourism', 'see ', 'sea ', 'Volcanoes', 'geography', 'read', '<i', 'county', 'country', 'province', 'region', 'state',
-                'damaged', 'United Arab Emirates', 'Middle East', 'national', 'capital', 'island', 'ocean', 'exchange', 'market',
-                'central', 'center', 'falklands', 'space program', 'confederation', 'battle', 'Gibraltar', 'desert', 'royal',
-                ' sea', '>', '<', 'territor', 'university', 'soviet', 'union', 'europe', ' centre', ' district', 'church ',
-                'cathedral', 'school', 'municipality', 'the ', ' area', ' zone', 'district of'}
+BANNED_WORDS = {'culture', 'Kingdom', 'communities', 'communes', 'commune', 'community',
+                'World War', 'history', 'empire', 'revolution', 'article', 'republic',
+                'metropoly', 'metropolis', 'tourism', 'see ', 'sea ', 'Volcanoes',
+                'geography', 'read', 'county', 'country', 'province', 'region', 'state',
+                'damaged', 'United Arab Emirates', 'Middle East', 'national', 'capital',
+                'island', 'ocean', 'exchange', 'market', 'central', 'center', 'falklands',
+                'space program', 'confederation', 'battle', 'Gibraltar', 'desert', 'royal',
+                ' sea', '>', '<', 'territor', 'university', 'soviet', 'union', 'europe',
+                ' centre', ' district', 'church ', 'cathedral', 'school', 'municipality',
+                'the ', ' area', ' zone', 'district of'}
 
 with open(COUNTRIES_FILE, 'r', encoding="utf8") as f:
     COUNTRIES = json.load(f)
@@ -234,13 +236,10 @@ def get_duplicate_cities(cities_attr: list) -> list:
     occurences = {}
     duplicates = []
     for city in cities_attr:
-        occurences[city[NAME]+city[COUNTRY]
-                   ] = occurences.get(city[NAME]+city[COUNTRY], 0) + 1
-        if occurences[city[NAME]+city[COUNTRY]] > 1:
+        key = city[NAME]+city[COUNTRY]
+        occurences[key] = occurences.get(key, 0) + 1
+        if occurences[key] > 1:
             duplicates.append(city)
-
-    print(occurences)
-    print(duplicates)
     return duplicates
 
 

@@ -24,15 +24,6 @@ DATA = "data"
 
 
 def strip_accents(text):
-    """
-    Strip accents from input String.
-
-    :param text: The input string.
-    :type text: String.
-
-    :returns: The processed String.
-    :rtype: String.
-    """
     text = unicodedata.normalize('NFD', text)
     text = text.encode('ascii', 'ignore')
     text = text.decode("utf-8")
@@ -40,15 +31,7 @@ def strip_accents(text):
 
 
 def text_to_id(text):
-    """
-    Convert input text to id.
 
-    :param text: The input string.
-    :type text: String.
-
-    :returns: The processed String.
-    :rtype: String.
-    """
     text = strip_accents(text.lower())
     text = re.sub('[ ]+', '_', text)
     text = re.sub('[^0-9a-zA-Z_-]', '', text)
@@ -63,22 +46,6 @@ def replace_special_chars(string: str) -> str:
 
 
 def regenerate_database(compressed_dict: dict) -> list:
-    '''
-    generate database with given structure:
-
-    [
-        {
-            NAME: str,
-            LAT: list,
-            LON: list,
-            COUNTRY: str,
-            SEARCH_COUNTRY: str,
-            SEARCH_NAME: str,
-            SEARCH_NAME_NONSPECIAL_CHAR: str
-        },
-        ...
-    ]
-    '''
     res = []
     keys = compressed_dict[KEYS]
     for country in compressed_dict[DATA]:
