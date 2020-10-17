@@ -80,7 +80,11 @@ class City(Location):
         return self.__degrees_to_decimal(self.longitude)
 
 
-class LocationDatabase:
+class EX_CityDataBaseNotOpened(Exception):
+    pass
+
+
+class CityDataBase:
     def __init__(self):
         self.__is_opened = False
         self.__cities_indexed: Dict[str, Dict[str, List[City]]] = dict(
@@ -89,6 +93,7 @@ class LocationDatabase:
 
     def open_from_json(self) -> bool:
         success = False
+        self.__is_opened = False
         try:
             with open(DB_JSON, 'r', encoding="utf8") as f:
                 db_json = json.load(f)
@@ -143,13 +148,19 @@ class LocationDatabase:
                 city_name = city.searchable_name()
             return city_name.startswith(text)
 
+        if not self.is_opened():
+            raise EX_CityDataBaseNotOpened(
+                "Open database using class built-in method: 'open_from_json' before trying to search for anything")
+
         matches: Set[City] = set()
         if len(text) > 0 and text[0].isalpha():
             text = _normalize_text(text, keep_diacritics=True)
             header = _normalize_text(text[:2])
             if len(header) < 2:
                 for _, cities in self.__cities_indexed[header[0]].items():
-                    matches.update(cities)
+                    for city in cities:
+                        if text_in_city_attr(text, city):
+                            matches.add(city)
             else:
                 try:
                     for city in self.__cities_indexed[header[0]][header[1]]:
@@ -163,7 +174,7 @@ class LocationDatabase:
 def main():
     import time
 
-    db = LocationDatabase()
+    db = CityDataBase()
     start = time.time()
     res = db.open_from_json()
     end = time.time()
