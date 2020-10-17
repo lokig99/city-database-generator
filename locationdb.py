@@ -98,10 +98,9 @@ class LocationDatabase:
         except json.JSONDecodeError as e:
             print('Database file is corrupted. Error:', e)
 
-        if success:
+        if success and self.__regenerate_database(db_json):
             self.__is_opened = True
-            return self.__regenerate_database(db_json)
-
+            return True
         return False
 
     def is_opened(self) -> bool:
