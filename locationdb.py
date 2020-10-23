@@ -11,6 +11,7 @@ from typing import List, Tuple, Dict, Any, Set
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_JSON = os.path.join(ROOT_DIR, "output.json")
 
+
 # Attributes keys
 NAME = "name"
 LAT = "lat"
@@ -18,12 +19,12 @@ LON = "lon"
 KEYS = "keys"
 DATA = "data"
 
+
 NON_UNICODE_CHARS = {'ł': 'l', 'ß': 'ss'}
-ASCII_ALPHABET = string.ascii_lowercase
 
 
 def _normalize_text(text: str, keep_diacritics=False) -> str:
-    text = " ".join(text.lower().split())
+    text = "".join(text.lower().split())
     if not keep_diacritics:
         text = unicodedata.normalize('NFD', text)
         for char in NON_UNICODE_CHARS:
@@ -84,11 +85,66 @@ class EX_CityDataBaseNotOpened(Exception):
     pass
 
 
+class CityTree:
+    def __init__(self):
+        self.__root: Dict[str, Dict] = {}
+
+    def add(self, city: City) -> bool:
+        city_name = city.searchable_name_normalized()
+        if len(city_name) > 0:
+            curr_node = self.__root
+            for char in city_name:
+                if not char in curr_node:
+                    curr_node[char] = {}
+                curr_node = curr_node[char]
+            if "" in curr_node:
+                curr_node[""].append(city)
+            else:
+                curr_node[""] = [city]
+            return True
+        return False
+
+    def find(self, city_name: str) -> List[City]:
+        city_name = _normalize_text(city_name)
+        if len(city_name) > 0:
+            curr_node = self.__root
+            for char in city_name:
+                if char in curr_node:
+                    curr_node = curr_node[char]
+                else:
+                    return []
+            return curr_node.get("", [])
+        return []
+
+    def __get_cities_recursive(self, node: Dict[str, Dict]) -> List[City]:
+        cities: List[City] = []
+        if "" in node:
+            cities.extend(node[""])
+        for key in node.keys():
+            if key != "":
+                cities.extend(self.__get_cities_recursive(node[key]))
+        return cities
+
+    def find_any(self, city_name: str) -> List[City]:
+        city_name = _normalize_text(city_name)
+        if len(city_name) > 0:
+            curr_node = self.__root
+            for char in city_name:
+                if char in curr_node:
+                    curr_node = curr_node[char]
+                else:
+                    return []
+            return self.__get_cities_recursive(curr_node)
+        return []
+
+    def size(self) -> int:
+        return len(self.__get_cities_recursive(self.__root))
+
+
 class CityDataBase:
     def __init__(self):
         self.__is_opened = False
-        self.__cities_indexed: Dict[str, Dict[str, List[City]]] = dict(
-            [(l, {}) for l in ASCII_ALPHABET])
+        self.__city_tree = CityTree()
         self.__countries: Set[Country] = set()
 
     def open_from_json(self) -> bool:
@@ -108,7 +164,7 @@ class CityDataBase:
             return True
         return False
 
-    def is_opened(self) -> bool:
+    def opened(self) -> bool:
         return self.__is_opened
 
     def __regenerate_database(self, json_db: Dict[str, Any]) -> bool:
@@ -125,13 +181,7 @@ class CityDataBase:
                     if len(tmp_dict) == len(keys):
                         city = City(tmp_dict[NAME], country,
                                     tmp_dict[LAT], tmp_dict[LON])
-                        header = city.searchable_name_normalized()[:2]
-                        if header[1] in self.__cities_indexed[header[0]]:
-                            self.__cities_indexed[header[0]
-                                                  ][header[1]].append(city)
-                        else:
-                            self.__cities_indexed[header[0]
-                                                  ][header[1]] = [city]
+                        self.__city_tree.add(city)
                         tmp_dict.clear()
                     tmp_dict[keys[i]] = data_bit
             result = True
@@ -139,36 +189,11 @@ class CityDataBase:
             print(e)
         return result
 
-    def search(self, text: str) -> Set[City]:
-        def text_in_city_attr(text: str, city: City) -> bool:
-            # check if there are no special characters in searched words
-            if _normalize_text(text) == text:
-                city_name = city.searchable_name_normalized()
-            else:
-                city_name = city.searchable_name()
-            return city_name.startswith(text)
-
-        if not self.is_opened():
+    def search(self, text: str) -> List[City]:
+        if not self.opened():
             raise EX_CityDataBaseNotOpened(
                 "Open database using class built-in method: 'open_from_json' before trying to search for anything")
-
-        matches: Set[City] = set()
-        if len(text) > 0 and text[0].isalpha():
-            text = _normalize_text(text, keep_diacritics=True)
-            header = _normalize_text(text[:2])
-            if len(header) < 2:
-                for _, cities in self.__cities_indexed[header[0]].items():
-                    for city in cities:
-                        if text_in_city_attr(text, city):
-                            matches.add(city)
-            else:
-                try:
-                    for city in self.__cities_indexed[header[0]][header[1]]:
-                        if text_in_city_attr(text, city):
-                            matches.add(city)
-                except KeyError:
-                    pass
-        return matches
+        return self.__city_tree.find_any(text)
 
 
 def main():
@@ -178,7 +203,7 @@ def main():
     start = time.time()
     res = db.open_from_json()
     end = time.time()
-    print(res, "took:", round((end - start) * 1000), "miliseconds")
+    print(res, "took:", round((end - start) * 1000000), "ns")
 
     while True:
         searched_text = input('Search for city: ')
@@ -189,7 +214,7 @@ def main():
         end = time.time()
         for city in matches:
             print(city)
-        print(f"\nSearch took: {round((end - start) * 1000)} miliseconds\n")
+        print(f"\nSearch took: {round((end - start) * 1000000)} ns\n")
 
 
 if __name__ == "__main__":
