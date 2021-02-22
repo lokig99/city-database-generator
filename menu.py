@@ -5,7 +5,7 @@ import re
 import unicodedata
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-JSON_DICT = os.path.join(ROOT_DIR, "output.json")
+JSON_DICT = os.path.join(ROOT_DIR, "locations.json")
 
 # Attributes keys
 NAME = "name"

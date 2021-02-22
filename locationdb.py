@@ -9,7 +9,7 @@ import unicodedata
 from typing import List, Tuple, Dict, Any, Set
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_JSON = os.path.join(ROOT_DIR, "output.json")
+DB_JSON = os.path.join(ROOT_DIR, "locations.json")
 
 
 # Attributes keys
@@ -20,7 +20,10 @@ KEYS = "keys"
 DATA = "data"
 
 
-NON_UNICODE_CHARS = {'ł': 'l', 'ß': 'ss'}
+NON_UNICODE_CHARS = {'ł': 'l', 'ß': 'ss', '‘': '\'', 'æ': 'ae',
+                     'ø': 'o', 'ı': 'i', 'œ': 'oe', '’': '\'',
+                     'ʻ': '\'', '–': '-', 'ð': 'o', 'đ': 'd',
+                     'ə': 'e', 'ʿ': '\'', 'þ': 'p', 'м': 'm'}
 
 
 def _normalize_text(text: str, keep_diacritics=False) -> str:
@@ -33,36 +36,21 @@ def _normalize_text(text: str, keep_diacritics=False) -> str:
     return text
 
 
-class Location:
-    def __init__(self, name: str):
+class City():
+    def __init__(self, name: str, country: str, latitude: Tuple[float], longitude: Tuple[float]):
         self.name = name
+        self.country = country
+        self.latitude = latitude
+        self.longitude = longitude
 
     def __str__(self):
-        return self.name
+        return f"{self.name}, {self.country}"
 
     def searchable_name(self) -> str:
         return _normalize_text(self.name, keep_diacritics=True)
 
     def searchable_name_normalized(self) -> str:
         return _normalize_text(self.name)
-
-
-class Country(Location):
-    def __init__(self, name: str):
-        super().__init__(name)
-        self.cities: Set[City] = set()
-
-
-class City(Location):
-    def __init__(self, name: str, country: Country, latitude: Tuple[float], longitude: Tuple[float]):
-        super().__init__(name)
-        self.country = country
-        country.cities.add(self)
-        self.latitude = latitude
-        self.longitude = longitude
-
-    def __str__(self):
-        return f"{super().__str__()}, {self.country}"
 
     def __degrees_to_decimal(self, coordinates: Tuple[float]) -> float:
         decimal = 0.0
@@ -89,9 +77,13 @@ class CityTree:
     def __init__(self):
         self.__root: Dict[str, Dict] = {}
 
+    def __iter__(self):
+        for city in self.__get_cities_recursive(self.__root):
+            yield city
+
     def add(self, city: City) -> bool:
         city_name = city.searchable_name_normalized()
-        if len(city_name) > 0:
+        if city_name:
             curr_node = self.__root
             for char in city_name:
                 if not char in curr_node:
@@ -106,7 +98,7 @@ class CityTree:
 
     def find(self, city_name: str) -> List[City]:
         city_name = _normalize_text(city_name)
-        if len(city_name) > 0:
+        if city_name:
             curr_node = self.__root
             for char in city_name:
                 if char in curr_node:
@@ -127,7 +119,7 @@ class CityTree:
 
     def find_any(self, city_name: str) -> List[City]:
         city_name = _normalize_text(city_name)
-        if len(city_name) > 0:
+        if city_name:
             curr_node = self.__root
             for char in city_name:
                 if char in curr_node:
@@ -145,11 +137,15 @@ class CityDataBase:
     def __init__(self):
         self.__is_opened = False
         self.__city_tree = CityTree()
-        self.__countries: Set[Country] = set()
+
+    def __iter__(self):
+        for city in self.__city_tree:
+            yield city
 
     def open_from_json(self) -> bool:
         success = False
         self.__is_opened = False
+        db_json = {}
         try:
             with open(DB_JSON, 'r', encoding="utf8") as f:
                 db_json = json.load(f)
@@ -168,26 +164,23 @@ class CityDataBase:
         return self.__is_opened
 
     def __regenerate_database(self, json_db: Dict[str, Any]) -> bool:
-        result = False
         try:
             keys = json_db[KEYS]
             for country_name in json_db[DATA]:
-                country = Country(country_name)
-                self.__countries.add(country)
                 data = json_db[DATA][country_name]
                 tmp_dict: Dict[str, Any] = {}
                 for i, data_bit in enumerate(data):
                     i = i % len(keys)
                     if len(tmp_dict) == len(keys):
-                        city = City(tmp_dict[NAME], country,
+                        city = City(tmp_dict[NAME], country_name,
                                     tmp_dict[LAT], tmp_dict[LON])
                         self.__city_tree.add(city)
                         tmp_dict.clear()
                     tmp_dict[keys[i]] = data_bit
-            result = True
+            return True
         except KeyError as e:
             print(e)
-        return result
+        return False
 
     def search(self, text: str) -> List[City]:
         if not self.opened():
@@ -200,21 +193,21 @@ def main():
     import time
 
     db = CityDataBase()
-    start = time.time()
+    start = time.time_ns()
     res = db.open_from_json()
-    end = time.time()
-    print(res, "took:", round((end - start) * 1000000), "ns")
+    end = time.time_ns()
+    print(res, "took:", end - start, "ns")
 
     while True:
         searched_text = input('Search for city: ')
         if searched_text == "exit()":
             break
-        start = time.time()
+        start = time.time_ns()
         matches = db.search(searched_text)
-        end = time.time()
+        end = time.time_ns()
         for city in matches:
             print(city)
-        print(f"\nSearch took: {round((end - start) * 1000000)} ns\n")
+        print(f"\nSearch took: {end - start} ns\n")
 
 
 if __name__ == "__main__":
